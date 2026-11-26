@@ -1,8 +1,9 @@
-Version: 1.11
+Version: 1.12
 desc: Dr. Rob Drum
 tags: instrument
 author: chmaha
 changelog:
+  Added configurable loop-key release behaviour.
   Renamed the sequencer page-follow control to Follow Keys.
   Added a selectable MIDI output channel for the sequencer.
   Added a Behaviour page for sequencer Follow and MIDI Out settings.
@@ -143,6 +144,7 @@ slider111:0<-100,100,1>-OH Pan
 slider112:0<-100,100,1>-RD Pan
 slider113:0<-100,100,1>-CY Pan
 slider114:9<0,15,1{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16}>-Sequencer MIDI Output Channel
+slider115:2<0,2,1{Continue,Hard Restart,Rejoin}>-Sequencer Loop Off
 
 options:no_meter gmem=DrNine
 config: outs "Outputs -preserve-config" 2 2="2 (stereo)" 11="11 (multi-out)"
@@ -933,6 +935,50 @@ function seq_loop_key(n)
   n === 72 ? 1 : n === 74 ? 2 : n === 76 ? 4 : n === 77 ? 8 : n === 79 ? 12 : 0;
 );
 
+function held_loop_steps() local(n, ch, steps, result)
+(
+  result = 0; n = 72;
+  loop(8,
+    steps = seq_loop_key(n);
+    steps > 0 ? (
+      piano_mouse_audio_note === n && (chan_sel === 0 || piano_mouse_channel === chan_sel - 1) ? result = steps;
+      ch = 0;
+      loop(16,
+        (chan_sel === 0 || ch === chan_sel - 1) && piano_key_state[ch * 128 + n] ? result = steps;
+        ch += 1;
+      );
+    );
+    n += 1;
+  );
+  result;
+);
+
+function queue_loop_change(off) local(steps)
+(
+  steps = held_loop_steps();
+  steps !== loop_input_steps ? (
+    loop_input_steps = steps;
+    loop_n > 0 && loopq[(loop_n - 1) * 2] === off ? loopq[(loop_n - 1) * 2 + 1] = steps :
+    loop_n < 30000 ? (
+      loopq[loop_n * 2] = off; loopq[loop_n * 2 + 1] = steps; loop_n += 1;
+    ) : loop_overflow = 1;
+  );
+);
+
+function set_loop_steps(steps)
+(
+  steps > 0 ? (
+    seq_held_loop === 0 ? seq_rejoin_phase = seq_phase;
+    seq_active_loop = steps;
+    seq_loop_pending = 0;
+  ) : seq_held_loop > 0 ? (
+    seq_loop_off === 0 ? seq_loop_pending = 1 :
+    seq_loop_off === 1 ? seq_loop_pending = 2 :
+    ( seq_phase = seq_rejoin_phase; seq_active_loop = 0; seq_loop_pending = 0; );
+  );
+  seq_held_loop = steps;
+);
+
 function pat_row(p, r, str) local(i)
 (
   i = 0;
@@ -975,30 +1021,38 @@ function seq_hit(c, off, acc) local(w, n)
   );
 );
 
-function seq_block(bp, prev) local(spb, be, sb, d, g, s, step, data_len, t, L, base, off, c, acc)
+function seq_block(bp, prev, from, until) local(spb, be, sb, d, g, pos, s, step, data_len, t, L, base, off, c, acc, release)
 (
   spb = (srate * 60) / tempo;
-  be = bp + samplesblock / spb;
-  !seq_run ? ( seq_run = 1; pat_cur = seq_sel; );
+  be = bp + until / spb;
   sb = pscl[pat_cur] === 0 ? 0.25 : pscl[pat_cur] === 1 ? 1 / 6 : pscl[pat_cur] === 2 ? 0.5 : pscl[pat_cur] === 3 ? 1 / 3 : 0.125;
   d = seq_shuf / 48 * (sb / 0.25);
   nl_len = max(1, floor(spb * sb * 0.5));
-  g = floor((bp - d) / sb) - 1;
+  g = floor((bp + from / spb - d) / sb) - 1;
   while (g * sb < be + sb) (
     L = max(1, plen[pat_cur]);
-    seq_loop_steps > 0 ? L = seq_loop_steps;
-    s = g - floor(g / L) * L;
+    seq_active_loop > 0 ? L = seq_active_loop;
+    pos = g + seq_phase;
+    s = pos - floor(pos / L) * L;
     data_len = max(1, plen[pat_cur]);
     step = s - floor(s / data_len) * data_len;
+    release = seq_loop_pending === 2 || (seq_loop_pending === 1 && s === 0);
     t = g * sb + (step & 1 ? d : 0);
     off = floor((t - bp) * spb + 0.0001);
-    prev && !prev_loop && g >= L && off >= 0 && off < samplesblock ? prev_end = 1 :
-    off >= 0 && off < samplesblock ? (
+    prev && !prev_loop && g >= L && off >= from && off < until && !seq_loop_pending ? prev_end = 1 :
+    off >= from && off < until && !prev_end ? (
+      release ? (
+        seq_phase = seq_loop_pending === 2 ? -g : L - g;
+        seq_active_loop = 0; seq_loop_pending = 0;
+        pos = g + seq_phase;
+        s = pos - floor(pos / data_len) * data_len;
+        step = s;
+      );
       s === 0 && pat_cur !== seq_sel ? (
         pat_cur = seq_sel;
         L = max(1, plen[pat_cur]);
-        seq_loop_steps > 0 ? L = seq_loop_steps;
-        s = g - floor(g / L) * L;
+        seq_active_loop > 0 ? L = seq_active_loop;
+        s = pos - floor(pos / L) * L;
         data_len = max(1, plen[pat_cur]);
         step = s - floor(s / data_len) * data_len;
       );
@@ -1013,11 +1067,12 @@ function seq_block(bp, prev) local(spb, be, sb, d, g, s, step, data_len, t, L, b
 );
 
 engine_init();
-seqm = 7900000; plen = seqm + 3072; pscl = plen + 16; sq = 7980000; noq = 7985000; clip = 7910000;
+seqm = 7900000; plen = seqm + 3072; pscl = plen + 16; sq = 7980000; noq = 7985000; clip = 7910000; loopq = 7920000;
 seq_magic !== 90909 ? ( seq_magic = 90909; seq_factory(); );
 seq_step = -1;
 prev_loop = 1; prev_on = 0;
 seq_loop_steps = 0;
+loop_overflow = 0;
 piano_mouse_note = piano_mouse_audio_note = -1;
 function apply_params()
 (
@@ -1122,6 +1177,7 @@ seq_on = slider100;
 seq_shuf = slider101;
 seq_mout = slider102;
 seq_out_ch = max(0, min(15, floor(slider114 + 0.5)));
+seq_loop_off = slider115;
 pan_apply();
 set_filters();
 );
@@ -1175,6 +1231,8 @@ while (gq_r != gq_w) (
   evq[ev_n * 3] = 0; evq[ev_n * 3 + 1] = gq[gq_r * 2]; evq[ev_n * 3 + 2] = gq[gq_r * 2 + 1];
   ev_n += 1; gq_r = (gq_r + 1) & 63;
 );
+loop_input_steps = held_loop_steps(); loop_initial_steps = loop_input_steps;
+loop_n = 0;
 piano_mouse_note !== piano_mouse_audio_note ? (
   piano_mouse_audio_note >= 0 ? midisend(0, 0x80 | piano_mouse_channel, piano_mouse_audio_note, 0);
   piano_mouse_audio_note = piano_mouse_note;
@@ -1186,6 +1244,7 @@ piano_mouse_note !== piano_mouse_audio_note ? (
     w >= 0 && ev_n < 1000 ? ( evq[ev_n * 3] = 0; evq[ev_n * 3 + 1] = w; evq[ev_n * 3 + 2] = 100; ev_n += 1; );
   );
 );
+queue_loop_change(0);
 while (midirecv(mofs, m1, m2, m3)) (
   midi_status = m1 & 240; midi_chan = m1 & 15;
   (midi_status === 144 || midi_status === 128) ? (
@@ -1209,21 +1268,11 @@ while (midirecv(mofs, m1, m2, m3)) (
     w = note_voice(m2);
     w >= 0 && ev_n < 1000 ? ( evq[ev_n * 3] = mofs; evq[ev_n * 3 + 1] = w; evq[ev_n * 3 + 2] = m3; ev_n += 1; );
   );
+  (((midi_status === 144 || midi_status === 128) && seq_loop_key(m2) > 0) ||
+    (midi_status === 176 && (m2 === 120 || m2 === 123))) ? queue_loop_change(mofs);
   midisend(mofs, m1, m2, m3);
 );
-seq_loop_steps = 0; loop_note = 72;
-loop(8,
-  loop_steps = seq_loop_key(loop_note);
-  loop_steps > 0 ? (
-    piano_mouse_audio_note === loop_note && (chan_sel === 0 || piano_mouse_channel === chan_sel - 1) ? seq_loop_steps = loop_steps;
-    loop_ch = 0;
-    loop(16,
-      (chan_sel === 0 || loop_ch === chan_sel - 1) && piano_key_state[loop_ch * 128 + loop_note] ? seq_loop_steps = loop_steps;
-      loop_ch += 1;
-    );
-  );
-  loop_note += 1;
-);
+seq_loop_steps = loop_input_steps;
 pat_key_pattern = -1; pat_i = 0;
 loop(16,
   pat_key_held = piano_mouse_audio_note === pat_key_base + pat_i && (chan_sel === 0 || piano_mouse_channel === chan_sel - 1); pat_ch = 0;
@@ -1247,12 +1296,28 @@ mode !== last_mode ? (
   mode === 2 ? prev_bp = 0;
   last_mode = mode;
 );
-mode === 1 ? seq_block(beat_position, 0) :
-mode === 2 ? (
-  prev_end = 0;
-  seq_block(prev_bp, !pat_key_preview);
-  prev_bp += samplesblock / ((srate * 60) / tempo);
-  prev_end ? ( prev_on = 0; seq_step = -1; );
+prev_end = 0;
+mode > 0 ? (
+  !seq_run ? (
+    seq_run = 1; pat_cur = seq_sel; seq_phase = 0; seq_rejoin_phase = 0;
+    seq_held_loop = loop_initial_steps; seq_active_loop = loop_initial_steps; seq_loop_pending = 0;
+  );
+  seq_held_loop !== loop_initial_steps ? set_loop_steps(loop_initial_steps);
+  seq_bp = mode === 1 ? beat_position : prev_bp;
+  seq_prev = mode === 2 && !pat_key_preview;
+  loop_i = 0; loop_from = 0;
+  loop(loop_n,
+    loop_to = loopq[loop_i * 2];
+    loop_to > loop_from ? seq_block(seq_bp, seq_prev, loop_from, loop_to);
+    set_loop_steps(loopq[loop_i * 2 + 1]);
+    loop_from = loop_to; loop_i += 1;
+  );
+  loop_from < samplesblock ? seq_block(seq_bp, seq_prev, loop_from, samplesblock);
+  loop_overflow && seq_held_loop !== loop_input_steps ? set_loop_steps(loop_input_steps);
+  mode === 2 ? (
+    prev_bp += samplesblock / ((srate * 60) / tempo);
+    prev_end ? ( prev_on = 0; seq_step = -1; );
+  );
 ) : ( seq_run = 0; seq_step = -1; pat_cur = seq_sel; );
 i = 0;
 loop(11,
@@ -1300,6 +1365,7 @@ now = time_precise();
 function automate(s, e)
 (
 s == 114 ? slider_automate(slider114, e) :
+s == 115 ? slider_automate(slider115, e) :
 <?
   max_sliders > 113 ? printf("slider_automate(2^(s-1),e);") :
     loop(i = 1; 113,
@@ -1310,7 +1376,7 @@ s == 114 ? slider_automate(slider114, e) :
 );
 
 function is_enum(i) (
-  i == 7 || i == 13 || i == 21 || i == 29 || i == 37 || i == 43 || i == 50 || i == 57 || i == 64 || i == 71 || i == 78 || i == 82 || i == 92 || i == 97 || i == 98 || i == 99 || i == 100 || i == 101 || i == 102 || i == 114;
+  i == 7 || i == 13 || i == 21 || i == 29 || i == 37 || i == 43 || i == 50 || i == 57 || i == 64 || i == 71 || i == 78 || i == 82 || i == 92 || i == 97 || i == 98 || i == 99 || i == 100 || i == 101 || i == 102 || i == 114 || i == 115;
 );
 
 function sl_name(i) (
@@ -1428,6 +1494,7 @@ function sl_name(i) (
   i == 112 ? "RD Pan" :
   i == 113 ? "CY Pan" :
   i == 114 ? "Sequencer MIDI Output Channel" :
+  i == 115 ? "Sequencer Loop Off" :
   ""
 );
 
@@ -1583,6 +1650,8 @@ function enum_name(i, v, str) local(n) (
     strcpy(str, v ? "ON" : "OFF");
   ) : (i == S_SHUF) ? (
     sprintf(str, "%d", v);
+  ) : (i == S_LOOP_OFF) ? (
+    strcpy(str, v == 0 ? "CONTINUE" : v == 1 ? "HARD RESTART" : "REJOIN");
   ) : (i == S_PAT || i == S_OUT_CHAN) ? (
     sprintf(str, "%d", v + 1);
   ) : (
@@ -1765,8 +1834,13 @@ function behaviour_page() (
   btn(50, 135, 90, 20, "FOLLOW KEYS", follow) ? follow = !follow;
   chip(170, 135, 90, S_MOUT, "MIDI OUT");
   chip(290, 135, 90, S_OUT_CHAN, "OUTPUT CH");
+  chip(410, 135, 110, S_LOOP_OFF, "LOOP OFF");
   hit(170, 135, 90, 20) ? ( tip_on = 1; tip_x = 215; tip_y = 160;
     #tip = "Sends the pattern's notes as MIDI on the selected output channel."; #tip2 = "To record them, set the track's record mode to Record: output (MIDI)."; );
+  loop_overflow ? (
+    font(9, 'b'); gfx_set(0.75, 0.1, 0.1, 1);
+    text_l("LOOP KEY EVENT BUFFER OVERFLOW", 50, 190);
+  );
 );
 
 function seq_toggle(x, y, w, h) local(QX, QY, QW, QH, hov, on, tw, th) (
@@ -2180,6 +2254,7 @@ function logo() local(tw, th) (
     23,41,0,52,0,0,62,24,0,103,0,0,63,63,30,0,122,0,0,84,64,0,0,89,0,0,97,64,0,0,80,0,0,108,
     64,0,0,42,0,0,108,64,0,0,47,0,0,0,41,0,44,42,127,73,57,62,85,7,52,51,62,85,0,0,0,0,0,0);
   slMax[114] = 15; slDef[114] = 9;
+  slMax[115] = 2; slDef[115] = 2;
   S_MDIST = 82;
   S_DTIME = 92;
   S_MAP = 97;
@@ -2204,6 +2279,7 @@ function logo() local(tw, th) (
   S_SHUF = 101;
   S_MOUT = 102;
   S_OUT_CHAN = 114;
+  S_LOOP_OFF = 115;
 );
 
 gfx_clear = 0;

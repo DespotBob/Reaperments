@@ -61,11 +61,18 @@ The light-red white keys loop the current pattern from its start:
 
 These are sequencer **steps**, not quarter-note beats; their duration depends on
 the pattern's **Scale** setting. Hold a key on a MIDI controller or with the
-mouse to apply its loop. The active loop key is marked; releasing all loop keys
-removes the mark and restores the normal pattern length. If several loop keys
+mouse to apply its loop. The active loop key is marked. If several loop keys
 are held, the highest note takes priority. If the selected loop exceeds the
 pattern length, the pattern repeats within the loop. These controls also work
 during pattern preview.
+
+The **LOOP OFF** selector in the Behaviour page's Sequencer section determines
+what happens when all loop keys are released:
+
+- **Continue** finishes the current loop, then continues with the next step.
+- **Hard Restart** restarts at step 1 on the next step boundary.
+- **Rejoin** (the default) resumes the uninterrupted sequence position at the
+  next step boundary.
 
 ## MIDI input
 
