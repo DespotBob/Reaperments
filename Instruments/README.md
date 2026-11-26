@@ -74,8 +74,10 @@ next sequencer step. **Current Bar** groups pattern columns using the
 **LOOP BOUNDARY** control on the Behaviour page (3-7 steps, default 4) and
 starts the loop at the beginning of the group containing the current step.
 For example, with a boundary of 4, columns 13-16 start at column 13. The
-final group is shortened if it reaches the end of the pattern, and a loop key
-longer than its group is limited to that group. The boundary counts sequencer
+final group is shortened if it reaches the end of the pattern. A loop key
+longer than its group plays its full length from the group start, up to the
+end of the pattern. The boundary also sets the column shading colours. The
+boundary counts sequencer
 steps regardless of Scale or project time signature. Playback enters the loop
 after its end; if already past the end, it enters at the next sequencer step.
 Releasing the key before a pending loop starts cancels it. Boundary changes

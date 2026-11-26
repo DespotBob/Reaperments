@@ -1025,7 +1025,7 @@ function set_loop_steps(steps, at_bp)
         seq_loop_on === 2 ? (
           seq_loop_bar_sb = seq_step_beats(pat_cur);
           seq_loop_base = floor(seq_loop_input_step / seq_loop_boundary) * seq_loop_boundary;
-          seq_loop_bar_end = min(max(1, plen[pat_cur]), seq_loop_base + seq_loop_boundary);
+          seq_loop_bar_end = max(1, plen[pat_cur]);
           seq_loop_start_pending = min(steps, seq_loop_bar_end - seq_loop_base);
           seq_loop_start_at = (seq_loop_input_grid + max(1, seq_loop_base + seq_loop_start_pending - seq_loop_input_step)) * seq_loop_bar_sb;
         );
@@ -1801,9 +1801,10 @@ function note_name(n, str) local(pc) (
   sprintf(str, "%s%d", pc == 0 ? "C" : pc == 1 ? "C#" : pc == 2 ? "D" : pc == 3 ? "D#" : pc == 4 ? "E" : pc == 5 ? "F" :
                        pc == 6 ? "F#" : pc == 7 ? "G" : pc == 8 ? "G#" : pc == 9 ? "A" : pc == 10 ? "A#" : "B", floor(n / 12) - 1);
 );
-function grp_col(i) (
-  i < 4 ? ( gr = 0.86; gg = 0.24; gb = 0.13; ) : i < 8 ? ( gr = 0.95; gg = 0.52; gb = 0.14; ) :
-  i < 12 ? ( gr = 0.96; gg = 0.82; gb = 0.30; ) : ( gr = 0.93; gg = 0.91; gb = 0.84; );
+function grp_col(i) local(g) (
+  g = floor(i / seq_loop_boundary) % 4;
+  g === 0 ? ( gr = 0.86; gg = 0.24; gb = 0.13; ) : g === 1 ? ( gr = 0.95; gg = 0.52; gb = 0.14; ) :
+  g === 2 ? ( gr = 0.96; gg = 0.82; gb = 0.30; ) : ( gr = 0.93; gg = 0.91; gb = 0.84; );
 );
 
 function pair(cx, y, a, la, b, lb) (
@@ -1942,7 +1943,7 @@ function behaviour_page() (
     #tip2 = "Current Beat starts at the next step; Current Bar uses the current loop boundary."; );
   hit(690, 135, 110, 20) ? ( tip_on = 1; tip_x = 745; tip_y = 160;
     #tip = "Current Bar groups the pattern into 3 to 7 sequencer steps.";
-    #tip2 = "The final group and loops longer than their group are truncated."; );
+    #tip2 = "Loops start at their group and may run past it, up to the pattern end."; );
   hit(170, 135, 90, 20) ? ( tip_on = 1; tip_x = 215; tip_y = 160;
     #tip = "Sends the pattern's notes as MIDI on the selected output channel."; #tip2 = "To record them, set the track's record mode to Record: output (MIDI)."; );
   loop_overflow ? (
