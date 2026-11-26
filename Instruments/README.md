@@ -49,7 +49,7 @@ the currently playing pattern on the Pattern page.
 
 ## Sequencer loop keys
 
-The light-red white keys loop the current pattern from its start:
+The light-red white keys loop the current pattern:
 
 | Key | MIDI note | Loop length |
 | --- | --- | --- |
@@ -62,9 +62,24 @@ The light-red white keys loop the current pattern from its start:
 These are sequencer **steps**, not quarter-note beats; their duration depends on
 the pattern's **Scale** setting. Hold a key on a MIDI controller or with the
 mouse to apply its loop. The active loop key is marked. If several loop keys
-are held, the highest note takes priority. If the selected loop exceeds the
-pattern length, the pattern repeats within the loop. These controls also work
-during pattern preview.
+are held, the highest note takes priority. In Start of Sequence and Current
+Beat modes, if the selected loop exceeds the pattern length, the pattern
+repeats within the loop. These controls also work during pattern preview.
+
+Active Range Markes: This Column-colored markers above the accent row show the steps in the current playbackrange. They follow the active loop, including loops that wrap around the end of a pattern, and otherwise show the pattern's full length.
+
+The **LOOP ON** selector controls where a held loop begins. **Start of
+Sequence** (the default) loops from the start. **Current Beat** starts at the
+next sequencer step. **Current Bar** groups pattern columns using the
+**LOOP BOUNDARY** control on the Behaviour page (3-7 steps, default 4) and
+starts the loop at the beginning of the group containing the current step.
+For example, with a boundary of 4, columns 13-16 start at column 13. The
+final group is shortened if it reaches the end of the pattern, and a loop key
+longer than its group is limited to that group. The boundary counts sequencer
+steps regardless of Scale or project time signature. Playback enters the loop
+after its end; if already past the end, it enters at the next sequencer step.
+Releasing the key before a pending loop starts cancels it. Boundary changes
+apply the next time a loop is started.
 
 The **LOOP OFF** selector in the Behaviour page's Sequencer section determines
 what happens when all loop keys are released:
@@ -87,3 +102,6 @@ as MIDI note-on and note-off events, using the selected note map. **OUTPUT CH**
 selects the sequencer's MIDI output channel (1-16; default 10). Incoming MIDI
 passes through unchanged whether MIDI OUT is on or off. To record the sequencer
 output in REAPER, arm the track and select **Record: output (MIDI)**.
+
+For the REAPER pattern-selection integration test, see
+[Tests/README.md](../Tests/README.md).

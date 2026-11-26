@@ -1,0 +1,24 @@
+desc: DrNine Pattern Selection Test Capture
+options:gmem=DrNinePatternSelectionTest
+
+@init
+ext_noinit = 1;
+gmem[1] = 1;
+
+@block
+while (midirecv(offset, status, note, velocity)) (
+  count = gmem[0];
+  count < 4096 ? (
+    base = 4 + count * 4;
+    gmem[base] = beat_position + offset * tempo / (srate * 60);
+    gmem[base + 1] = status;
+    gmem[base + 2] = note;
+    gmem[base + 3] = velocity;
+    gmem[0] = count + 1;
+  ) : gmem[2] = 1;
+  midisend(offset, status, note, velocity);
+);
+
+@sample
+spl0 = 0;
+spl1 = 0;
