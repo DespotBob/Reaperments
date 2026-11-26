@@ -55,9 +55,9 @@ The light-red white keys loop the current pattern:
 | --- | --- | --- |
 | C | 72 | 1 step |
 | D | 74 | 2 steps |
-| E | 76 | 4 steps |
-| F | 77 | 8 steps |
-| G | 79 | 12 steps |
+| E | 76 | 1 Loop Boundary of steps |
+| F | 77 | 2 Loop Boundaries of steps |
+| G | 79 | 3 Loop Boundaries of steps |
 
 These are sequencer **steps**, not quarter-note beats; their duration depends on
 the pattern's **Scale** setting. Hold a key on a MIDI controller or with the
@@ -65,6 +65,8 @@ mouse to apply its loop. The active loop key is marked. If several loop keys
 are held, the highest note takes priority. In Start of Sequence and Current
 Beat modes, if the selected loop exceeds the pattern length, the pattern
 repeats within the loop. These controls also work during pattern preview.
+When the sequencer is off, or the transport is stopped, holding a loop key
+plays the pattern by hand; releasing the key stops it.
 
 Active Range Markes: This Column-colored markers above the accent row show the steps in the current playbackrange. They follow the active loop, including loops that wrap around the end of a pattern, and otherwise show the pattern's full length.
 

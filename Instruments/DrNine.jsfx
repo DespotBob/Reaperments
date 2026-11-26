@@ -3,6 +3,8 @@ desc: Dr. Rob Drum
 tags: instrument
 author: chmaha
 changelog:
+  Loop keys now play the pattern while held when the sequencer is off, so it can be played by hand.
+  Loop keys E, F and G now play 1, 2 and 3 Loop Boundaries of steps.
   Added configurable Current Bar loop boundaries and aligned them to the playing step.
   Fixed Current Bar loops to use the beginning of the current four-beat bar.
   Fixed Current Beat loop start to use the current pattern step.
@@ -942,7 +944,7 @@ function voice_note(w)
 
 function seq_loop_key(n)
 (
-  n === 72 ? 1 : n === 74 ? 2 : n === 76 ? 4 : n === 77 ? 8 : n === 79 ? 12 : 0;
+  n === 72 ? 1 : n === 74 ? 2 : n === 76 ? seq_loop_boundary : n === 77 ? 2 * seq_loop_boundary : n === 79 ? 3 * seq_loop_boundary : 0;
 );
 
 function held_loop_steps() local(n, ch, steps, result)
@@ -1382,10 +1384,10 @@ prev_req ? (
   play_state === 0 ? ( prev_on = !prev_on; prev_bp = 0; seq_run = 0; );
 );
 pat_key_preview = pat_key_pattern >= 0 && play_state === 0;
-mode = seq_on && (play_state & 1) ? 1 : (prev_on || pat_key_preview) ? 2 : 0;
+mode = seq_on && (play_state & 1) ? 1 : (prev_on || pat_key_preview) ? 2 : loop_input_steps > 0 ? 3 : 0;
 mode !== last_mode ? (
   seq_run = 0;
-  mode === 2 ? prev_bp = 0;
+  mode >= 2 ? prev_bp = 0;
   last_mode = mode;
 );
 prev_end = 0;
@@ -1394,7 +1396,7 @@ mode > 0 ? (
    seq_run = 1; pat_cur = seq_sel; seq_phase = 0; seq_rejoin_phase = 0;
    seq_held_loop = 0; seq_active_loop = 0; seq_loop_pending = 0; seq_loop_start_pending = 0; seq_loop_base = 0;
   );
-  seq_bp = mode === 1 ? beat_position : prev_bp;
+  seq_bp = mode === 1 || (mode === 3 && (play_state & 1)) ? beat_position : prev_bp;
   seq_prev = mode === 2 && !pat_key_preview;
   seq_held_loop !== loop_initial_steps ? set_loop_steps(loop_initial_steps, seq_bp);
   loop_i = 0; loop_from = 0;
@@ -1406,7 +1408,7 @@ mode > 0 ? (
   );
   loop_from < samplesblock ? seq_block(seq_bp, seq_prev, loop_from, samplesblock);
   loop_overflow && seq_held_loop !== loop_input_steps ? set_loop_steps(loop_input_steps, seq_bp + samplesblock / ((srate * 60) / tempo));
-  mode === 2 ? (
+  mode >= 2 && !(mode === 3 && (play_state & 1)) ? (
     prev_bp += samplesblock / ((srate * 60) / tempo);
     prev_end ? ( prev_on = 0; seq_step = -1; );
   );
