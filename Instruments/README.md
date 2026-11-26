@@ -1,0 +1,71 @@
+# DrNine Drum Synthesizer
+
+DrNine is a REAPER JSFX drum instrument. Its on-screen piano keyboard displays
+incoming MIDI notes and can also be played with the mouse. Click and hold a key,
+or drag across keys, to play notes at velocity 100. Releasing the mouse button
+or dragging off the keyboard releases the current note. Mouse notes are sent
+on the selected MIDI channel (channel 1 in Omni mode).
+
+## Keyboard colors
+
+The keyboard displays MIDI notes 35-99. Keys mapped to a drum are tinted by
+voice, and the tint darkens while the note is held. Short drum and pattern
+notes remain darkened briefly after note-on so quick notes are visible. Loop
+keys return to their normal color when released. Unmapped keys use the neutral
+piano colors. Black keys use darker versions of the same colors.
+
+| Drum voice | Key color | General MIDI notes | Chromatic from C1 |
+| --- | --- | --- | --- |
+| Bass drum | Red | 35, 36 | 36 |
+| Snare drum | Orange | 38, 40 | 37 |
+| Low tom | Gold | 41, 45 | 38 |
+| Mid tom | Yellow-green | 47, 48 | 39 |
+| High tom | Green | 43, 50 | 40 |
+| Rim shot | Teal | 37 | 41 |
+| Hand clap | Violet | 39 | 42 |
+| Open hi-hat | Pink | 46 | 44 |
+| Closed hi-hat | Purple | 42 | 43 |
+| Ride | Blue | 51 | 46 |
+| Crash | Coral | 49 | 45 |
+
+Change the **Note Map** control to switch between the two drum layouts. The
+note numbers above are authoritative; octave labels can differ between DAWs.
+
+## Sequencer pattern keys
+
+MIDI notes 84-99 select patterns 1-16, respectively. These keys are all tinted
+light blue to distinguish them from drum keys. Holding a pattern key selects
+that pattern. When REAPER's transport is stopped, holding a pattern key also
+starts a looping audition of that pattern; releasing all pattern keys stops
+the audition. This works even if the **Sequencer** control is off. While the
+transport is running, pattern keys only select the pattern, and the
+**Sequencer** control determines whether it plays. A changed pattern takes
+effect at the next pattern boundary. When all pattern keys are released,
+selection returns to the pattern chosen by the **Pattern** control. Pattern
+keys do not trigger drum voices.
+
+## Sequencer loop keys
+
+The light-red white keys loop the current pattern from its start:
+
+| Key | MIDI note | Loop length |
+| --- | --- | --- |
+| C | 72 | 1 step |
+| D | 74 | 2 steps |
+| E | 76 | 4 steps |
+| F | 77 | 8 steps |
+| G | 79 | 12 steps |
+
+These are sequencer **steps**, not quarter-note beats; their duration depends on
+the pattern's **Scale** setting. Hold a key on a MIDI controller or with the
+mouse to apply its loop. The active loop key is marked; releasing all loop keys
+removes the mark and restores the normal pattern length. If several loop keys
+are held, the highest note takes priority. If the selected loop exceeds the
+pattern length, the pattern repeats within the loop. These controls also work
+during pattern preview.
+
+## MIDI input
+
+The **MIDI Channel** control filters drum notes, pattern selection, and loop keys.
+**Omni** accepts notes on all channels. In REAPER, route MIDI to the track
+containing DrNine and enable record monitoring to play it live.

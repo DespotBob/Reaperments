@@ -1,8 +1,14 @@
-Version: 1.0
-desc: Dr. Nine Drum Synthesizer (9W9 port) by chmaha
+Version: 1.6
+desc: Dr. Rob Drum
 tags: instrument
 author: chmaha
 changelog:
+  Made the on-screen MIDI keyboard playable with the mouse.
+  Expanded the held loop keys to 1, 2, 4, 8 and 12 steps.
+  Loop keys now apply only while held.
+  Corrected loop key timing to count sequencer steps and added an active-key indicator.
+  Added light-red MIDI keyboard keys for 2, 4 and 8 step sequence loops.
+  Added a live MIDI keyboard with color-coded drum and pattern keys.
   Initial release.
 about:
   TR-909 style drum machine: circuit-modelled kick, snare, toms, rim shot and hand clap,
@@ -680,6 +686,8 @@ function engine_init() local(i, n)
   smA = alloc(64); smT = alloc(64);
   pat_key_base = 84;
   pat_key_state = alloc(256);
+  piano_key_state = alloc(2048);
+  piano_key_hit_time = alloc(2048);
   memset(pan_l, 1, 11); memset(pan_r, 1, 11); memset(pt_l, 1, 11); memset(pt_r, 1, 11);
 
   bd[6] = 0.2; bd[7] = 1; bd[5] = 2500;
@@ -914,6 +922,11 @@ function voice_note(w)
   );
 );
 
+function seq_loop_key(n)
+(
+  n === 72 ? 1 : n === 74 ? 2 : n === 76 ? 4 : n === 77 ? 8 : n === 79 ? 12 : 0;
+);
+
 function pat_row(p, r, str) local(i)
 (
   i = 0;
@@ -951,7 +964,7 @@ function seq_hit(c, off, acc) local(w, n)
   );
 );
 
-function seq_block(bp, prev) local(spb, be, sb, d, g, s, t, L, base, off, c, acc)
+function seq_block(bp, prev) local(spb, be, sb, d, g, s, step, data_len, t, L, base, off, c, acc)
 (
   spb = (srate * 60) / tempo;
   be = bp + samplesblock / spb;
@@ -962,21 +975,27 @@ function seq_block(bp, prev) local(spb, be, sb, d, g, s, t, L, base, off, c, acc
   g = floor((bp - d) / sb) - 1;
   while (g * sb < be + sb) (
     L = max(1, plen[pat_cur]);
+    seq_loop_steps > 0 ? L = seq_loop_steps;
     s = g - floor(g / L) * L;
-    t = g * sb + (s & 1 ? d : 0);
+    data_len = max(1, plen[pat_cur]);
+    step = s - floor(s / data_len) * data_len;
+    t = g * sb + (step & 1 ? d : 0);
     off = floor((t - bp) * spb + 0.0001);
     prev && !prev_loop && g >= L && off >= 0 && off < samplesblock ? prev_end = 1 :
     off >= 0 && off < samplesblock ? (
       s === 0 && pat_cur !== seq_sel ? (
         pat_cur = seq_sel;
         L = max(1, plen[pat_cur]);
+        seq_loop_steps > 0 ? L = seq_loop_steps;
         s = g - floor(g / L) * L;
+        data_len = max(1, plen[pat_cur]);
+        step = s - floor(s / data_len) * data_len;
       );
       base = pat_cur * 192;
-      acc = seqm[base + 176 + s];
+      acc = seqm[base + 176 + step];
       c = 0;
-      loop(11, seqm[base + c * 16 + s] ? seq_hit(c, off, acc); c += 1; );
-      seq_step = s; seq_pat = pat_cur;
+      loop(11, seqm[base + c * 16 + step] ? seq_hit(c, off, acc); c += 1; );
+      seq_step = step; seq_pat = pat_cur;
     );
     g += 1;
   );
@@ -987,6 +1006,8 @@ seqm = 7900000; plen = seqm + 3072; pscl = plen + 16; sq = 7980000; noq = 798500
 seq_magic !== 90909 ? ( seq_magic = 90909; seq_factory(); );
 seq_step = -1;
 prev_loop = 1; prev_on = 0;
+seq_loop_steps = 0;
+piano_mouse_note = piano_mouse_audio_note = -1;
 function apply_params()
 (
 bd[0] = 6.0 + (32.0 - 6.0) * (slider1 / 127);
@@ -1149,12 +1170,33 @@ while (gq_r != gq_w) (
   evq[ev_n * 3] = 0; evq[ev_n * 3 + 1] = gq[gq_r * 2]; evq[ev_n * 3 + 2] = gq[gq_r * 2 + 1];
   ev_n += 1; gq_r = (gq_r + 1) & 63;
 );
+piano_mouse_note !== piano_mouse_audio_note ? (
+  piano_mouse_audio_note >= 0 ? midisend(0, 0x80 | piano_mouse_channel, piano_mouse_audio_note, 0);
+  piano_mouse_audio_note = piano_mouse_note;
+  piano_mouse_audio_note >= 0 ? (
+    piano_mouse_channel = max(0, chan_sel - 1);
+    piano_mouse_hit_note = piano_mouse_audio_note; piano_mouse_hit_time = time_precise();
+    midisend(0, 0x90 | piano_mouse_channel, piano_mouse_audio_note, 100);
+    w = note_voice(piano_mouse_audio_note);
+    w >= 0 && ev_n < 1000 ? ( evq[ev_n * 3] = 0; evq[ev_n * 3 + 1] = w; evq[ev_n * 3 + 2] = 100; ev_n += 1; );
+  );
+);
 while (midirecv(mofs, m1, m2, m3)) (
   midi_status = m1 & 240; midi_chan = m1 & 15;
+  (midi_status === 144 || midi_status === 128) ? (
+    piano_key_state[midi_chan * 128 + m2] = midi_status === 144 && m3 > 0 ? 1 : 0;
+    midi_status === 144 && m3 > 0 ? piano_key_hit_time[midi_chan * 128 + m2] = time_precise();
+  );
   (midi_status === 144 || midi_status === 128) && m2 >= pat_key_base && m2 < pat_key_base + 16 ? (
     pat_key_state[(m2 - pat_key_base) * 16 + midi_chan] = midi_status === 144 && m3 > 0 ? 1 : 0;
   );
   midi_status === 176 && (m2 === 120 || m2 === 123) ? (
+    piano_i = 0;
+    loop(128,
+      piano_key_state[midi_chan * 128 + piano_i] = 0;
+      piano_key_hit_time[midi_chan * 128 + piano_i] = 0;
+      piano_i += 1;
+    );
     pat_i = 0;
     loop(16, pat_key_state[pat_i * 16 + midi_chan] = 0; pat_i += 1; );
   );
@@ -1164,9 +1206,22 @@ while (midirecv(mofs, m1, m2, m3)) (
   );
   midisend(mofs, m1, m2, m3);
 );
+seq_loop_steps = 0; loop_note = 72;
+loop(8,
+  loop_steps = seq_loop_key(loop_note);
+  loop_steps > 0 ? (
+    piano_mouse_audio_note === loop_note && (chan_sel === 0 || piano_mouse_channel === chan_sel - 1) ? seq_loop_steps = loop_steps;
+    loop_ch = 0;
+    loop(16,
+      (chan_sel === 0 || loop_ch === chan_sel - 1) && piano_key_state[loop_ch * 128 + loop_note] ? seq_loop_steps = loop_steps;
+      loop_ch += 1;
+    );
+  );
+  loop_note += 1;
+);
 pat_key_pattern = -1; pat_i = 0;
 loop(16,
-  pat_key_held = 0; pat_ch = 0;
+  pat_key_held = piano_mouse_audio_note === pat_key_base + pat_i && (chan_sel === 0 || piano_mouse_channel === chan_sel - 1); pat_ch = 0;
   loop(16,
     (chan_sel === 0 || pat_ch === chan_sel - 1) && pat_key_state[pat_i * 16 + pat_ch] ? pat_key_held = 1;
     pat_ch += 1;
@@ -1180,12 +1235,17 @@ prev_req ? (
   prev_req = 0;
   play_state === 0 ? ( prev_on = !prev_on; prev_bp = 0; seq_run = 0; );
 );
-mode = seq_on && (play_state & 1) ? 1 : prev_on ? 2 : 0;
-mode !== last_mode ? ( seq_run = 0; last_mode = mode; );
+pat_key_preview = pat_key_pattern >= 0 && play_state === 0;
+mode = seq_on && (play_state & 1) ? 1 : (prev_on || pat_key_preview) ? 2 : 0;
+mode !== last_mode ? (
+  seq_run = 0;
+  mode === 2 ? prev_bp = 0;
+  last_mode = mode;
+);
 mode === 1 ? seq_block(beat_position, 0) :
 mode === 2 ? (
   prev_end = 0;
-  seq_block(prev_bp, 1);
+  seq_block(prev_bp, !pat_key_preview);
   prev_bp += samplesblock / ((srate * 60) / tempo);
   prev_end ? ( prev_on = 0; seq_step = -1; );
 ) : ( seq_run = 0; seq_step = -1; pat_cur = seq_sel; );
@@ -1214,9 +1274,9 @@ file_var(0, ser_v);
 file_mem(0, seqm, 3104);
 file_avail(0) >= 0 ? seq_magic = 90909;
 
-@gfx 1000 600
+@gfx 1000 690
 
-W0 = 1000; H0 = 600;
+W0 = 1000; H0 = 690;
 z = max(0.4, min(gfx_w / W0, gfx_h / H0));
 ox = floor((gfx_w - W0 * z) * 0.5);
 oy = floor((gfx_h - H0 * z) * 0.5);
@@ -1862,6 +1922,134 @@ function pad(c) local(x, y, w, h, QX, QY, QW, QH, hov, t, lit, vel) (
   );
 );
 
+function piano_white(n) local(pc) (
+  pc = n % 12;
+  pc === 0 || pc === 2 || pc === 4 || pc === 5 || pc === 7 || pc === 9 || pc === 11;
+);
+
+function piano_active(n) local(ch, held, i) (
+  held = piano_mouse_note === n ||
+    (seq_loop_key(n) === 0 && piano_mouse_hit_note === n && piano_mouse_hit_time > 0 && now - piano_mouse_hit_time < 0.16);
+  ch = 0;
+  loop(16,
+    i = ch * 128 + n;
+    (chan_sel === 0 || ch === chan_sel - 1) &&
+      (piano_key_state[i] || (seq_loop_key(n) === 0 && piano_key_hit_time[i] > 0 && now - piano_key_hit_time[i] < 0.16)) ? held = 1;
+    ch += 1;
+  );
+  held;
+);
+
+function piano_key_color(n, black, held) local(w, mapped) (
+  w = note_voice(n);
+  seq_loop_key(n) > 0 ? (
+    kr = 1.00; kg = 0.68; kb = 0.68; w = -3;
+  ) : w >= 0 ? (
+    w === 0 ? ( kr = 0.96; kg = 0.20; kb = 0.16; ) :
+    w === 1 ? ( kr = 1.00; kg = 0.47; kb = 0.12; ) :
+    w === 2 ? ( kr = 0.95; kg = 0.75; kb = 0.15; ) :
+    w === 3 ? ( kr = 0.64; kg = 0.82; kb = 0.16; ) :
+    w === 4 ? ( kr = 0.24; kg = 0.76; kb = 0.28; ) :
+    w === 5 ? ( kr = 0.10; kg = 0.72; kb = 0.58; ) :
+    w === 6 ? ( kr = 0.67; kg = 0.38; kb = 0.86; ) :
+    w === 7 ? ( kr = 0.91; kg = 0.28; kb = 0.52; ) :
+    w === 8 ? ( kr = 0.72; kg = 0.24; kb = 0.76; ) :
+    w === 9 ? ( kr = 0.30; kg = 0.50; kb = 0.86; ) :
+              ( kr = 0.88; kg = 0.34; kb = 0.22; );
+  ) : n >= pat_key_base && n < pat_key_base + 16 ? (
+    kr = 0.30; kg = 0.68; kb = 1.00; w = -2;
+  ) : (
+    w = -1;
+  );
+  mapped = w !== -1;
+  mapped ? (
+    black ? (
+      kr = 0.04 + kr * 0.55; kg = 0.04 + kg * 0.55; kb = 0.04 + kb * 0.55;
+    ) : (
+      kr = 0.65 + kr * 0.35; kg = 0.65 + kg * 0.35; kb = 0.65 + kb * 0.35;
+    );
+    held ? ( kr *= 0.62; kg *= 0.62; kb *= 0.62; );
+  );
+  mapped;
+);
+
+function piano_keyboard() local(x0, y0, ww, kh, white_n, kw, bw, n, wi, x, on, mapped, mouse_note) (
+  x0 = 16; y0 = 586; ww = 968; kh = 86;
+  white_n = 0; n = 35;
+  loop(65, piano_white(n) ? white_n += 1; n += 1; );
+  kw = ww / white_n; bw = kw * 0.62;
+  mouse_note = -1;
+  hit(x0, y0, ww, kh) ? (
+    wi = 0; n = 35;
+    loop(65,
+      piano_white(n) ? (
+        hit(x0 + wi * kw, y0, kw, kh) ? mouse_note = n;
+        wi += 1;
+      );
+      n += 1;
+    );
+    wi = 0; n = 35;
+    loop(65,
+      piano_white(n) ? wi += 1 : (
+        hit(x0 + wi * kw - bw * 0.5, y0, bw, kh * 0.62) ? mouse_note = n;
+      );
+      n += 1;
+    );
+  );
+  mouse_click && mouse_note >= 0 ? ( piano_mouse_capture = 1; mouse_click = 0; );
+  piano_mouse_capture ? (
+    mouse_cap & 1 ? piano_mouse_note = mouse_note : ( piano_mouse_note = -1; piano_mouse_capture = 0; );
+  );
+  wi = 0; n = 35;
+  loop(65,
+    piano_white(n) ? (
+      x = x0 + wi * kw;
+      on = piano_active(n);
+      mapped = piano_key_color(n, 0, on);
+      !mapped ? ( on ? ( kr = 0.58; kg = 0.59; kb = 0.61; ) : ( kr = 0.91; kg = 0.91; kb = 0.88; ); );
+      gfx_set(kr, kg, kb, 1);
+      gfx_rect(sx(x), sy(y0), kw * z - z, kh * z, 1);
+      seq_loop_steps > 0 && seq_loop_key(n) == seq_loop_steps ? (
+        gfx_set(0.65, 0.12, 0.16, 1);
+        gfx_rect(sx(x), sy(y0), kw * z - z, 3 * z, 1);
+      );
+      seq_loop_key(n) > 0 ? (
+        font(8.5, 'b');
+        gfx_set(0.45, 0.12, 0.14, 1);
+        sprintf(#loop_label, "%d", seq_loop_key(n));
+        text_c(#loop_label, x + kw * 0.5, y0 + 13);
+      );
+      gfx_set(0.10, 0.10, 0.11, 0.65);
+      gfx_line(sx(x), sy(y0), sx(x), sy(y0 + kh), 1);
+      n % 12 === 0 ? (
+        note_name(n, #piano_note);
+        font(7.5, 'b');
+        gfx_set(on ? 0.06 : 0.25, on ? 0.06 : 0.25, on ? 0.06 : 0.25, 1);
+        text_c(#piano_note, x + kw * 0.5, y0 + kh - 10);
+        font(8.5, 'b');
+      );
+      wi += 1;
+    );
+    n += 1;
+  );
+  wi = 0; n = 35;
+  loop(65,
+    piano_white(n) ? wi += 1 : (
+      x = x0 + wi * kw - bw * 0.5;
+      on = piano_active(n);
+      mapped = piano_key_color(n, 1, on);
+      !mapped ? ( on ? ( kr = 0.24; kg = 0.24; kb = 0.26; ) : ( kr = 0.08; kg = 0.08; kb = 0.09; ); );
+      gfx_set(kr, kg, kb, 1);
+      gfx_rect(sx(x), sy(y0), bw * z, kh * 0.62 * z, 1);
+      gfx_set(0.02, 0.02, 0.02, 0.85);
+      gfx_line(sx(x), sy(y0), sx(x + bw), sy(y0), 1);
+      gfx_line(sx(x), sy(y0), sx(x), sy(y0 + kh * 0.62), 1);
+      gfx_line(sx(x + bw), sy(y0), sx(x + bw), sy(y0 + kh * 0.62), 1);
+    );
+    n += 1;
+  );
+);
+
 function tab(x, w, n, label) local(hov, QX, QY, QW, QH, on) (
   on = page == n;
   QX = sx(x); QY = sy(18); QW = w * z; QH = 26 * z;
@@ -2023,9 +2211,7 @@ chip(914, 24, 70, S_CHAN, "MIDI CH");
 page == 0 ? kit_page() : page == 1 ? pat_page() : fx_page();
 
 c = 0; loop(11, pad(c); c += 1; );
-font(8.5, 'b');
-gfx_set(0.62, 0.62, 0.60, 1);
-text_l("PADS PLAY THEIR VOICE, LOUDER NEAR THE TOP", 16, 586);
+piano_keyboard();
 
 tip_on ? tip_below(tip_x, tip_y, #tip, #tip2);
 hov_i > 0 ? (
@@ -2039,3 +2225,4 @@ hov_i > 0 ? (
 
 last_cap = mouse_cap;
 mouse_wheel = 0;
+
