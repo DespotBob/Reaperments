@@ -44,6 +44,9 @@ effect at the next pattern boundary. When all pattern keys are released,
 selection returns to the pattern chosen by the **Pattern** control. Pattern
 keys do not trigger drum voices.
 
+On the **Behaviour** page, enable **FOLLOW KEYS** in the Sequencer section to show
+the currently playing pattern on the Pattern page.
+
 ## Sequencer loop keys
 
 The light-red white keys loop the current pattern from its start:
@@ -72,7 +75,8 @@ containing DrNine and enable record monitoring to play it live.
 
 ## Sequencer MIDI output
 
-Turn on **MIDI OUT** on the Pattern page to send sequencer drum hits as MIDI
-note-on and note-off events on channel 10, using the selected note map. Incoming
-MIDI passes through unchanged whether MIDI OUT is on or off. To record the
-sequencer output in REAPER, arm the track and select **Record: output (MIDI)**.
+Turn on **MIDI OUT** in the Behaviour page's Sequencer section to send drum hits
+as MIDI note-on and note-off events, using the selected note map. **OUTPUT CH**
+selects the sequencer's MIDI output channel (1-16; default 10). Incoming MIDI
+passes through unchanged whether MIDI OUT is on or off. To record the sequencer
+output in REAPER, arm the track and select **Record: output (MIDI)**.

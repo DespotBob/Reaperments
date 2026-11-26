@@ -1,8 +1,11 @@
-Version: 1.9
+Version: 1.11
 desc: Dr. Rob Drum
 tags: instrument
 author: chmaha
 changelog:
+  Renamed the sequencer page-follow control to Follow Keys.
+  Added a selectable MIDI output channel for the sequencer.
+  Added a Behaviour page for sequencer Follow and MIDI Out settings.
   Corrected sequencer MIDI note-off timing.
   Added a Follow toggle for the currently playing pattern.
   Made the on-screen MIDI keyboard playable with the mouse.
@@ -139,6 +142,7 @@ slider110:0<-100,100,1>-CH Pan
 slider111:0<-100,100,1>-OH Pan
 slider112:0<-100,100,1>-RD Pan
 slider113:0<-100,100,1>-CY Pan
+slider114:9<0,15,1{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16}>-Sequencer MIDI Output Channel
 
 options:no_meter gmem=DrNine
 config: outs "Outputs -preserve-config" 2 2="2 (stereo)" 11="11 (multi-out)"
@@ -961,11 +965,12 @@ function seq_hit(c, off, acc) local(w, n)
   sq_n < 1000 ? (
     sq[sq_n * 3] = off; sq[sq_n * 3 + 1] = w; sq[sq_n * 3 + 2] = acc ? 127 : 100; sq_n += 1;
     seq_mout ? (
-      noq[w * 2] > 0 ? midisend(min(off, noq[w * 2 + 1]), 0x89, noq[w * 2] - 1, 0);
+      noq[w * 2] > 0 ? midisend(min(off, noq[w * 2 + 1]), 0x80 | noq[22 + w], noq[w * 2] - 1, 0);
       n = voice_note(w);
-      midisend(off, 0x99, n, acc ? 127 : 100);
+      midisend(off, 0x90 | seq_out_ch, n, acc ? 127 : 100);
       noq[w * 2] = n + 1;
       noq[w * 2 + 1] = off + nl_len;
+      noq[22 + w] = seq_out_ch;
     );
   );
 );
@@ -1116,6 +1121,7 @@ seq_sel = slider99;
 seq_on = slider100;
 seq_shuf = slider101;
 seq_mout = slider102;
+seq_out_ch = max(0, min(15, floor(slider114 + 0.5)));
 pan_apply();
 set_filters();
 );
@@ -1252,7 +1258,7 @@ i = 0;
 loop(11,
   noq[i * 2] > 0 ? (
     noq[i * 2 + 1] < samplesblock ? (
-      midisend(noq[i * 2 + 1], 0x89, noq[i * 2] - 1, 0);
+      midisend(noq[i * 2 + 1], 0x80 | noq[22 + i], noq[i * 2] - 1, 0);
       noq[i * 2] = 0;
     ) : noq[i * 2 + 1] -= samplesblock;
   );
@@ -1293,6 +1299,7 @@ now = time_precise();
 
 function automate(s, e)
 (
+s == 114 ? slider_automate(slider114, e) :
 <?
   max_sliders > 113 ? printf("slider_automate(2^(s-1),e);") :
     loop(i = 1; 113,
@@ -1303,7 +1310,7 @@ function automate(s, e)
 );
 
 function is_enum(i) (
-  i == 7 || i == 13 || i == 21 || i == 29 || i == 37 || i == 43 || i == 50 || i == 57 || i == 64 || i == 71 || i == 78 || i == 82 || i == 92 || i == 97 || i == 98 || i == 99 || i == 100 || i == 101 || i == 102;
+  i == 7 || i == 13 || i == 21 || i == 29 || i == 37 || i == 43 || i == 50 || i == 57 || i == 64 || i == 71 || i == 78 || i == 82 || i == 92 || i == 97 || i == 98 || i == 99 || i == 100 || i == 101 || i == 102 || i == 114;
 );
 
 function sl_name(i) (
@@ -1420,6 +1427,7 @@ function sl_name(i) (
   i == 111 ? "OH Pan" :
   i == 112 ? "RD Pan" :
   i == 113 ? "CY Pan" :
+  i == 114 ? "Sequencer MIDI Output Channel" :
   ""
 );
 
@@ -1575,7 +1583,7 @@ function enum_name(i, v, str) local(n) (
     strcpy(str, v ? "ON" : "OFF");
   ) : (i == S_SHUF) ? (
     sprintf(str, "%d", v);
-  ) : (i == S_PAT) ? (
+  ) : (i == S_PAT || i == S_OUT_CHAN) ? (
     sprintf(str, "%d", v + 1);
   ) : (
     strcpy(str, v == 0 ? "DIODE" : v == 1 ? "CLIP" : v == 2 ? "SAT" : v == 3 ? "BFZ" : v == 4 ? "PDIST" : v == 5 ? "FOLD" : "CRUSH");
@@ -1751,6 +1759,16 @@ function fx_page() (
   text_l("DELAY TIME FOLLOWS THE PROJECT TEMPO. EVERY VOICE EXCEPT THE KICK HAS REVERB AND DELAY SENDS ON THE KIT PAGE.", 40, 400);
 );
 
+function behaviour_page() (
+  group(40, 72, 920, "SEQUENCER");
+  font(8.5, 'b'); gfx_set(0.12, 0.12, 0.13, 1); text_c("PAGE", 95, 121);
+  btn(50, 135, 90, 20, "FOLLOW KEYS", follow) ? follow = !follow;
+  chip(170, 135, 90, S_MOUT, "MIDI OUT");
+  chip(290, 135, 90, S_OUT_CHAN, "OUTPUT CH");
+  hit(170, 135, 90, 20) ? ( tip_on = 1; tip_x = 215; tip_y = 160;
+    #tip = "Sends the pattern's notes as MIDI on the selected output channel."; #tip2 = "To record them, set the track's record mode to Record: output (MIDI)."; );
+);
+
 function seq_toggle(x, y, w, h) local(QX, QY, QW, QH, hov, on, tw, th) (
   QX = sx(x); QY = sy(y); QW = w * z; QH = h * z;
   on = slider(S_SEQON);
@@ -1813,7 +1831,6 @@ function pat_page() local(p, x, y, r, s, QX, QY, QW, QH, on, base, L, hov, pl, s
   base = p * 192;
   L = plen[p];
   font(8.5, 'b'); gfx_set(0.12, 0.12, 0.13, 1); text_l("PATTERN", 16, 60);
-  btn(70, 54, 58, 18, "FOLLOW", follow) ? follow = !follow;
   k = 0;
   loop(16,
     x = 16 + k * 27;
@@ -1837,9 +1854,6 @@ function pat_page() local(p, x, y, r, s, QX, QY, QW, QH, on, base, L, hov, pl, s
     sel > 0 ? ( pscl[p] = sel - 1; sliderchange(-1); );
   );
   chip(572, 76, 40, S_SHUF, "SHUFFLE");
-  chip(620, 76, 58, S_MOUT, "MIDI OUT");
-  hit(620, 76, 58, 20) ? ( tip_on = 1; tip_x = 649; tip_y = 100;
-    #tip = "Sends the pattern's notes as MIDI (channel 10)."; #tip2 = "To record them, set the track's record mode to Record: output (MIDI)."; );
   font(8.5, 'b'); gfx_set(0.12, 0.12, 0.13, 1); text_c("PREVIEW", 737, 60);
   play_btn(688, 76, 58, 20);
   btn(750, 76, 38, 20, "LOOP", prev_loop) ? prev_loop = !prev_loop;
@@ -2165,6 +2179,7 @@ function logo() local(tw, th) (
   mem_set_values(slDef+1, 34,13,90,0,45,0,0,94,64,68,64,36,0,58,0,0,66,111,23,41,0,52,0,0,69,100,23,41,0,52,0,0,53,105,
     23,41,0,52,0,0,62,24,0,103,0,0,63,63,30,0,122,0,0,84,64,0,0,89,0,0,97,64,0,0,80,0,0,108,
     64,0,0,42,0,0,108,64,0,0,47,0,0,0,41,0,44,42,127,73,57,62,85,7,52,51,62,85,0,0,0,0,0,0);
+  slMax[114] = 15; slDef[114] = 9;
   S_MDIST = 82;
   S_DTIME = 92;
   S_MAP = 97;
@@ -2188,6 +2203,7 @@ function logo() local(tw, th) (
   S_SEQON = 100;
   S_SHUF = 101;
   S_MOUT = 102;
+  S_OUT_CHAN = 114;
 );
 
 gfx_clear = 0;
@@ -2212,13 +2228,14 @@ box(0, 480, W0, 2);
 
 logo();
 seq_toggle(318, 12, 84, 36);
-tab(430, 84, 0, "KIT");
-tab(520, 104, 1, "PATTERN");
-tab(630, 124, 2, "FX / MASTER");
+tab(416, 55, 0, "KIT");
+tab(477, 78, 1, "PATTERN");
+tab(561, 99, 2, "FX / MASTER");
+tab(666, 100, 3, "BEHAVIOUR");
 chip(784, 24, 118, S_MAP, "NOTE MAP");
 chip(914, 24, 70, S_CHAN, "MIDI CH");
 
-page == 0 ? kit_page() : page == 1 ? pat_page() : fx_page();
+page == 0 ? kit_page() : page == 1 ? pat_page() : page == 2 ? fx_page() : behaviour_page();
 
 c = 0; loop(11, pad(c); c += 1; );
 piano_keyboard();
