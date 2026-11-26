@@ -1,8 +1,10 @@
-Version: 1.6
+Version: 1.9
 desc: Dr. Rob Drum
 tags: instrument
 author: chmaha
 changelog:
+  Corrected sequencer MIDI note-off timing.
+  Added a Follow toggle for the currently playing pattern.
   Made the on-screen MIDI keyboard playable with the mouse.
   Expanded the held loop keys to 1, 2, 4, 8 and 12 steps.
   Loop keys now apply only while held.
@@ -956,11 +958,15 @@ function seq_factory() local(p)
 function seq_hit(c, off, acc) local(w, n)
 (
   w = col_trig(c);
-  sq_n < 1000 ? ( sq[sq_n * 3] = off; sq[sq_n * 3 + 1] = w; sq[sq_n * 3 + 2] = acc ? 127 : 100; sq_n += 1; );
-  seq_mout ? (
-    n = voice_note(w);
-    midisend(off, 0x99, n, acc ? 127 : 100);
-    no_n < 64 ? ( noq[no_n * 2] = n; noq[no_n * 2 + 1] = off + nl_len; no_n += 1; );
+  sq_n < 1000 ? (
+    sq[sq_n * 3] = off; sq[sq_n * 3 + 1] = w; sq[sq_n * 3 + 2] = acc ? 127 : 100; sq_n += 1;
+    seq_mout ? (
+      noq[w * 2] > 0 ? midisend(min(off, noq[w * 2 + 1]), 0x89, noq[w * 2] - 1, 0);
+      n = voice_note(w);
+      midisend(off, 0x99, n, acc ? 127 : 100);
+      noq[w * 2] = n + 1;
+      noq[w * 2 + 1] = off + nl_len;
+    );
   );
 );
 
@@ -971,7 +977,7 @@ function seq_block(bp, prev) local(spb, be, sb, d, g, s, step, data_len, t, L, b
   !seq_run ? ( seq_run = 1; pat_cur = seq_sel; );
   sb = pscl[pat_cur] === 0 ? 0.25 : pscl[pat_cur] === 1 ? 1 / 6 : pscl[pat_cur] === 2 ? 0.5 : pscl[pat_cur] === 3 ? 1 / 3 : 0.125;
   d = seq_shuf / 48 * (sb / 0.25);
-  nl_len = floor(spb * sb * 0.5);
+  nl_len = max(1, floor(spb * sb * 0.5));
   g = floor((bp - d) / sb) - 1;
   while (g * sb < be + sb) (
     L = max(1, plen[pat_cur]);
@@ -1159,13 +1165,6 @@ pan_st = 0;
 ii = 0; loop(11, (pan_l[ii] !== 1 || pan_r[ii] !== 1 || pt_l[ii] !== 1 || pt_r[ii] !== 1) ? pan_st = 1; ii += 1; );
 tempo > 20 && tempo !== last_bpm ? ( last_bpm = tempo; dl_bpm = tempo; dly_retime(); );
 ev_n = 0; ev_i = 0; ev_pos = 0; sq_n = 0; sq_i = 0;
-i = 0;
-while (i < no_n) (
-  noq[i * 2 + 1] < samplesblock ? (
-    midisend(max(0, noq[i * 2 + 1]), 0x89, noq[i * 2], 0);
-    no_n -= 1; noq[i * 2] = noq[no_n * 2]; noq[i * 2 + 1] = noq[no_n * 2 + 1];
-  ) : ( noq[i * 2 + 1] -= samplesblock; i += 1; );
-);
 while (gq_r != gq_w) (
   evq[ev_n * 3] = 0; evq[ev_n * 3 + 1] = gq[gq_r * 2]; evq[ev_n * 3 + 2] = gq[gq_r * 2 + 1];
   ev_n += 1; gq_r = (gq_r + 1) & 63;
@@ -1249,6 +1248,16 @@ mode === 2 ? (
   prev_bp += samplesblock / ((srate * 60) / tempo);
   prev_end ? ( prev_on = 0; seq_step = -1; );
 ) : ( seq_run = 0; seq_step = -1; pat_cur = seq_sel; );
+i = 0;
+loop(11,
+  noq[i * 2] > 0 ? (
+    noq[i * 2 + 1] < samplesblock ? (
+      midisend(noq[i * 2 + 1], 0x89, noq[i * 2] - 1, 0);
+      noq[i * 2] = 0;
+    ) : noq[i * 2 + 1] -= samplesblock;
+  );
+  i += 1;
+);
 
 @sample
 
@@ -1800,10 +1809,11 @@ function tip_below(x, y, str, str2) local(tw, th, tw2, bx, by, bw, bh, two) (
 function pat_has(p) local(k, r) ( r = 0; k = 0; loop(192, seqm[p * 192 + k] ? r = 1; k += 1; ); r; );
 
 function pat_page() local(p, x, y, r, s, QX, QY, QW, QH, on, base, L, hov, pl, sel, k, v, cw, sh) (
-  p = slider(S_PAT);
+  p = follow && seq_step >= 0 ? seq_pat : slider(S_PAT);
   base = p * 192;
   L = plen[p];
   font(8.5, 'b'); gfx_set(0.12, 0.12, 0.13, 1); text_l("PATTERN", 16, 60);
+  btn(70, 54, 58, 18, "FOLLOW", follow) ? follow = !follow;
   k = 0;
   loop(16,
     x = 16 + k * 27;
@@ -2083,7 +2093,7 @@ function logo() local(tw, th) (
 
 !init_gfx ? (
   init_gfx = 1;
-  drag_i = -1; last_click_i = -1; page = 0;
+  drag_i = -1; last_click_i = -1; page = 0; follow = 0;
   colK[0] = 1;
   colK[1] = 8;
   colK[2] = 2;

@@ -69,3 +69,10 @@ during pattern preview.
 The **MIDI Channel** control filters drum notes, pattern selection, and loop keys.
 **Omni** accepts notes on all channels. In REAPER, route MIDI to the track
 containing DrNine and enable record monitoring to play it live.
+
+## Sequencer MIDI output
+
+Turn on **MIDI OUT** on the Pattern page to send sequencer drum hits as MIDI
+note-on and note-off events on channel 10, using the selected note map. Incoming
+MIDI passes through unchanged whether MIDI OUT is on or off. To record the
+sequencer output in REAPER, arm the track and select **Record: output (MIDI)**.
